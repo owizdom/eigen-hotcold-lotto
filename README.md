@@ -1,5 +1,8 @@
 # HotColdLotto — TEE-Enforced Guessing Game on EigenCompute
 
+<img width="689" height="396" alt="Screenshot 2026-02-11 at 12 08 45" src="https://github.com/user-attachments/assets/2d6e572f-8ef2-4245-ae95-ee900c4faa21" />
+
+
 A provably fair "hot-cold" lottery where a TEE enclave generates a sealed 12-digit target number. Players submit guesses with ETH buy-ins; the enclave returns deterministic distance hints. As guesses get closer, buy-ins automatically escalate to slow brute-force and grow the pot. First exact match wins the entire pool.
 
 All logic is enclave-enforced with signed audit trails, designed for deployment on EigenCloud (Layr-Labs Intel TDX infrastructure).
