@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HotColdLotto :: Terminal</title>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #ffffff;
+  --green: #007a1e;
+  --green-dim: #009926;
+  --green-glow: rgba(0, 122, 30, 0.2);
+  --amber: #b37a00;
+  --amber-dim: #996600;
+  --red: #cc2222;
+  --panel-bg: rgba(0, 100, 30, 0.04);
+  --panel-border: rgba(0, 100, 30, 0.2);
+  --text: #2d5a2d;
+  --text-dim: #7a9a7a;
+  --tier-base: #2277cc;
+  --tier-warm: #cc9900;
+  --tier-hot: #dd6600;
+  --tier-scorching: #cc1100;
+}
+
+body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  line-height: 1.4;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* CRT scanline overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.04) 2px,
+    rgba(0, 0, 0, 0.04) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* CRT flicker */
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.8; }
+  94% { opacity: 1; }
+}
+body { animation: flicker 8s infinite; }
+
+/* Screens */
+.screen { display: none; flex-direction: column; align-items: center; padding: 40px 20px; min-height: 100vh; }
+.screen.active { display: flex; }
+
+/* Glassmorphism panel */
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 24px;
+  width: 100%;
+  max-width: 720px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), inset 0 0 20px rgba(0, 100, 30, 0.02);
+  transition: all 0.3s ease;
+}
+.panel:hover { border-color: rgba(0, 100, 30, 0.35); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08); }
+
+/* ===== LANDING SCREEN ===== */
+.site-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 36px;
+  color: var(--green);
+  text-align: center;
+  text-shadow: 0 0 10px var(--green-glow);
+  margin-bottom: 8px;
+}
+.site-subtitle {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 18px;
+  color: var(--amber);
+  text-align: center;
+  margin-bottom: 30px;
+  letter-spacing: 4px;
+}
+
+.attestation-box { text-align: center; margin-bottom: 24px; }
+.attestation-box .label { color: var(--text-dim); font-size: 16px; letter-spacing: 2px; text-transform: uppercase; }
+.attestation-box .address { color: var(--amber); font-size: 18px; word-break: break-all; margin: 6px 0; }
+.mode-badge {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  margin-top: 6px;
+}
+.mode-badge.simulation { background: rgba(179, 122, 0, 0.1); border: 1px solid var(--amber-dim); color: var(--amber); }
+.mode-badge.tee { background: rgba(0, 122, 30, 0.1); border: 1px solid var(--green-dim); color: var(--green); }
+
+.btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  padding: 16px 32px;
+  border: 2px solid var(--green);
+  background: rgba(0, 122, 30, 0.06);
+  color: var(--green);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+.btn:hover:not(:disabled) { background: rgba(0, 122, 30, 0.12); box-shadow: 0 0 20px var(--green-glow); transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.amber { border-color: var(--amber); color: var(--amber); background: rgba(179, 122, 0, 0.06); }
+.btn.amber:hover:not(:disabled) { background: rgba(179, 122, 0, 0.12); box-shadow: 0 0 20px rgba(179, 122, 0, 0.2); }
+
+/* ===== PLAYING SCREEN ===== */
+.round-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 20px;
+  font-size: 18px;
+}
+.round-bar .stat { text-align: center; }
+.round-bar .stat .val { color: var(--amber); font-size: 22px; }
+.round-bar .stat .lbl { color: var(--text-dim); font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Digit input boxes */
+.digit-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 20px 0 16px;
+  flex-wrap: wrap;
+}
+.digit-input {
+  width: 48px;
+  height: 56px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  color: var(--green);
+  font-family: 'VT323', monospace;
+  font-size: 32px;
+  text-align: center;
+  caret-color: var(--green);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.digit-input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 12px var(--green-glow);
+}
+.digit-input::selection { background: rgba(0, 122, 30, 0.2); }
+
+/* Submit area */
+.submit-area { text-align: center; margin: 10px 0 20px; position: relative; }
+.cooldown-bar-wrap {
+  width: 100%;
+  max-width: 300px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+  margin: 10px auto 0;
+  overflow: hidden;
+  display: none;
+}
+.cooldown-bar-wrap.active { display: block; }
+.cooldown-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--green-dim), var(--green));
+  border-radius: 3px;
+  transition: none;
+}
+.cooldown-text { font-size: 14px; color: var(--text-dim); margin-top: 4px; display: none; }
+.cooldown-text.active { display: block; }
+
+/* Thermometer */
+.thermo-label { font-size: 14px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
+.thermo-wrap {
+  width: 100%;
+  height: 24px;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  background: linear-gradient(90deg, var(--tier-base), #55cc55, var(--tier-warm), var(--tier-hot), var(--tier-scorching));
+  margin-bottom: 20px;
+}
+.thermo-cover {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.88);
+  border-radius: 0 12px 12px 0;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  width: 100%;
+}
+.thermo-marker {
+  position: absolute;
+  top: -2px;
+  width: 4px;
+  height: 28px;
+  background: #333;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+  transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  left: 0%;
+}
+
+/* Guess history */
+.history-title { font-size: 16px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; }
+.history-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 4px; }
+.history-list::-webkit-scrollbar { width: 6px; }
+.history-list::-webkit-scrollbar-track { background: transparent; }
+.history-list::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 3px; }
+
+.history-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  font-size: 18px;
+  flex-wrap: wrap;
+  animation: slideIn 0.3s ease;
+}
+@keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+.history-entry .num { color: var(--text-dim); min-width: 30px; }
+.history-entry .guess-digits { color: var(--green); letter-spacing: 2px; font-size: 20px; }
+.history-entry .indicators { display: flex; gap: 3px; align-items: center; }
+.indicator { font-size: 16px; }
+.indicator.bull { color: var(--green); }
+.indicator.cow { color: var(--amber); }
+.indicator.miss { color: var(--text-dim); }
+
+.history-entry .distance { font-size: 14px; margin-left: auto; }
+.tier-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.tier-badge.base { background: rgba(34, 119, 204, 0.1); border: 1px solid rgba(34, 119, 204, 0.4); color: var(--tier-base); }
+.tier-badge.warm { background: rgba(204, 153, 0, 0.1); border: 1px solid rgba(204, 153, 0, 0.4); color: var(--tier-warm); }
+.tier-badge.hot { background: rgba(221, 102, 0, 0.1); border: 1px solid rgba(221, 102, 0, 0.4); color: var(--tier-hot); }
+.tier-badge.scorching { background: rgba(204, 17, 0, 0.1); border: 1px solid rgba(204, 17, 0, 0.4); color: var(--tier-scorching); }
+
+/* ===== WINNER SCREEN ===== */
+.winner-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 28px;
+  color: var(--amber);
+  text-shadow: 0 0 20px rgba(255, 176, 0, 0.5);
+  margin-bottom: 24px;
+  text-align: center;
+  animation: pulse 1.5s ease infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+.winner-info { text-align: center; margin-bottom: 24px; }
+.winner-info .big { font-size: 28px; color: var(--green); margin: 8px 0; }
+.winner-info .sub { color: var(--text-dim); font-size: 16px; }
+
+/* CSS confetti */
+.confetti-container { position: fixed; inset: 0; pointer-events: none; z-index: 9998; overflow: hidden; }
+.confetti-piece {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  top: -20px;
+  animation: confettiFall linear forwards;
+}
+@keyframes confettiFall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+
+/* Status / error */
+.status-msg {
+  text-align: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 16px;
+  margin: 10px 0;
+  display: none;
+}
+.status-msg.active { display: block; }
+.status-msg.error { background: rgba(204, 34, 34, 0.06); border: 1px solid rgba(204, 34, 34, 0.25); color: var(--red); }
+.status-msg.info { background: rgba(0, 122, 30, 0.04); border: 1px solid var(--panel-border); color: var(--text); }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .site-title { font-size: 24px; }
+  .site-subtitle { font-size: 14px; }
+  .digit-input { width: 38px; height: 46px; font-size: 26px; }
+  .panel { padding: 16px; }
+  .winner-title { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== LANDING SCREEN ===== -->
+<div id="screen-landing" class="screen active">
+  <div class="site-title">HotCold</div>
+  <div class="site-subtitle">LOTTO</div>
+
+  <div class="panel" style="max-width: 540px;">
+    <div class="attestation-box">
+      <div class="label">Enclave Attestation</div>
+      <div class="address" id="att-address">Loading...</div>
+      <div id="att-mode"></div>
+    </div>
+    <div style="text-align: center;">
+      <button class="btn" id="btn-new-game">New Game</button>
+    </div>
+    <div id="landing-status" class="status-msg"></div>
+  </div>
+</div>
+
+<!-- ===== PLAYING SCREEN ===== -->
+<div id="screen-playing" class="screen">
+  <div class="panel">
+    <div class="round-bar">
+      <div class="stat"><div class="val" id="stat-pool">0</div><div class="lbl">Pool (ETH)</div></div>
+      <div class="stat"><div class="val" id="stat-buyin">0.01</div><div class="lbl">Buy-In</div></div>
+      <div class="stat"><div class="val" id="stat-guesses">0</div><div class="lbl">Guesses</div></div>
+      <div class="stat"><div class="val" id="stat-tier"><span class="tier-badge base">base</span></div><div class="lbl">Tier</div></div>
+    </div>
+
+    <div class="digit-row" id="digit-row"></div>
+
+    <div class="submit-area">
+      <button class="btn" id="btn-submit">Submit Guess</button>
+      <div class="cooldown-bar-wrap" id="cooldown-wrap">
+        <div class="cooldown-bar" id="cooldown-bar"></div>
+      </div>
+      <div class="cooldown-text" id="cooldown-text">Cooldown: 12s</div>
+    </div>
+
+    <div id="play-status" class="status-msg"></div>
+
+    <div class="thermo-label">Distance Thermometer</div>
+    <div class="thermo-wrap">
+      <div class="thermo-cover" id="thermo-cover"></div>
+      <div class="thermo-marker" id="thermo-marker"></div>
+    </div>
+
+    <div class="history-title">Guess History</div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+</div>
+
+<!-- ===== WINNER SCREEN ===== -->
+<div id="screen-winner" class="screen">
+  <div class="confetti-container" id="confetti-container"></div>
+  <div class="panel" style="max-width: 540px; text-align: center;">
+    <div class="winner-title">YOU WON!</div>
+    <div class="winner-info">
+      <div class="sub">Winner</div>
+      <div class="big" id="win-address" style="font-size: 18px; word-break: break-all;"></div>
+      <div class="sub" style="margin-top: 16px;">Pool Collected</div>
+      <div class="big" id="win-pool"></div>
+      <div class="sub" style="margin-top: 16px;">Total Guesses</div>
+      <div class="big" id="win-guesses"></div>
+    </div>
+    <button class="btn amber" id="btn-play-again">Play Again</button>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:3000';
+
+// ---- State ----
+let state = {
+  roundId: null,
+  player: null,
+  guessCount: 0,
+  txCounter: 0,
+  history: [],
+  cooldownUntil: 0,
+  cooldownRaf: null,
+};
+
+// ---- DOM refs ----
+const $ = (sel) => document.querySelector(sel);
+const screens = {
+  landing: $('#screen-landing'),
+  playing: $('#screen-playing'),
+  winner: $('#screen-winner'),
+};
+
+function showScreen(name) {
+  Object.values(screens).forEach(s => s.classList.remove('active'));
+  screens[name].classList.add('active');
+}
+
+function showStatus(elId, msg, type = 'error') {
+  const el = $(`#${elId}`);
+  el.textContent = msg;
+  el.className = `status-msg active ${type}`;
+  if (type !== 'error') setTimeout(() => el.classList.remove('active'), 4000);
+}
+function clearStatus(elId) { $(`#${elId}`).className = 'status-msg'; }
+
+// ---- Landing ----
+async function loadAttestation() {
+  try {
+    const res = await fetch(`${API}/attestation`);
+    const data = await res.json();
+    $('#att-address').textContent = data.address;
+    const badge = document.createElement('span');
+    badge.className = `mode-badge ${data.mode}`;
+    badge.textContent = data.mode === 'tee' ? 'TEE MODE' : 'SIMULATION';
+    $('#att-mode').innerHTML = '';
+    $('#att-mode').appendChild(badge);
+  } catch (e) {
+    $('#att-address').textContent = 'Failed to connect';
+    showStatus('landing-status', 'Cannot reach enclave at ' + API);
+  }
+}
+
+// ---- Digit inputs ----
+function createDigitInputs() {
+  const row = $('#digit-row');
+  row.innerHTML = '';
+  for (let i = 0; i < 12; i++) {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.inputMode = 'numeric';
+    inp.maxLength = 1;
+    inp.className = 'digit-input';
+    inp.dataset.idx = i;
+    inp.addEventListener('input', onDigitInput);
+    inp.addEventListener('keydown', onDigitKeydown);
+    inp.addEventListener('paste', onDigitPaste);
+    row.appendChild(inp);
+  }
+}
+
+function getDigitInputs() {
+  return Array.from(document.querySelectorAll('.digit-input'));
+}
+
+function onDigitInput(e) {
+  const inp = e.target;
+  const val = inp.value.replace(/\D/g, '');
+  inp.value = val.slice(-1);
+  if (inp.value && +inp.dataset.idx < 11) {
+    getDigitInputs()[+inp.dataset.idx + 1].focus();
+  }
+}
+
+function onDigitKeydown(e) {
+  const idx = +e.target.dataset.idx;
+  if (e.key === 'Backspace') {
+    if (!e.target.value && idx > 0) {
+      const prev = getDigitInputs()[idx - 1];
+      prev.value = '';
+      prev.focus();
+    }
+  } else if (e.key === 'ArrowLeft' && idx > 0) {
+    getDigitInputs()[idx - 1].focus();
+  } else if (e.key === 'ArrowRight' && idx < 11) {
+    getDigitInputs()[idx + 1].focus();
+  } else if (e.key === 'Enter') {
+    submitGuess();
+  }
+}
+
+function onDigitPaste(e) {
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+  const inputs = getDigitInputs();
+  const startIdx = +e.target.dataset.idx;
+  for (let i = 0; i < text.length && startIdx + i < 12; i++) {
+    inputs[startIdx + i].value = text[i];
+  }
+  const focusIdx = Math.min(startIdx + text.length, 11);
+  inputs[focusIdx].focus();
+}
+
+function getGuessString() {
+  return getDigitInputs().map(i => i.value).join('');
+}
+
+function clearDigits() {
+  getDigitInputs().forEach(i => (i.value = ''));
+  getDigitInputs()[0].focus();
+}
+
+// ---- Cooldown ----
+function startCooldown() {
+  const duration = 12000;
+  state.cooldownUntil = Date.now() + duration;
+  $('#btn-submit').disabled = true;
+  $('#cooldown-wrap').classList.add('active');
+  $('#cooldown-text').classList.add('active');
+
+  function tick() {
+    const remaining = state.cooldownUntil - Date.now();
+    if (remaining <= 0) {
+      $('#btn-submit').disabled = false;
+      $('#cooldown-wrap').classList.remove('active');
+      $('#cooldown-text').classList.remove('active');
+      $('#cooldown-bar').style.width = '0%';
+      return;
+    }
+    const pct = ((duration - remaining) / duration) * 100;
+    $('#cooldown-bar').style.width = pct + '%';
+    $('#cooldown-text').textContent = `Cooldown: ${(remaining / 1000).toFixed(1)}s`;
+    state.cooldownRaf = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+// ---- Thermometer ----
+function updateThermometer(distStr) {
+  const dist = BigInt(distStr);
+  // Max distance for 12-digit: 999999999999
+  const maxLog = Math.log10(999999999999 + 1); // ~12
+  const distLog = dist > 0n ? Math.log10(Number(dist) + 1) : 0;
+  const pct = Math.max(0, Math.min(100, ((maxLog - distLog) / maxLog) * 100));
+  const coverPct = 100 - pct;
+  $('#thermo-cover').style.width = coverPct + '%';
+  $('#thermo-marker').style.left = `calc(${pct}% - 2px)`;
+}
+
+// ---- Tier helpers ----
+function tierColor(tier) {
+  return { base: 'var(--tier-base)', warm: 'var(--tier-warm)', hot: 'var(--tier-hot)', scorching: 'var(--tier-scorching)' }[tier] || 'var(--text-dim)';
+}
+
+function formatWei(wei) {
+  const s = wei.toString().padStart(19, '0');
+  const eth = s.slice(0, -18) + '.' + s.slice(-18, -14);
+  return parseFloat(eth).toFixed(4);
+}
+
+// ---- History ----
+function renderHistory() {
+  const list = $('#history-list');
+  list.innerHTML = '';
+  // newest first
+  const sorted = [...state.history].reverse();
+  for (const entry of sorted) {
+    const div = document.createElement('div');
+    div.className = 'history-entry';
+
+    // #N
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = `#${entry.index}`;
+
+    // digits
+    const digits = document.createElement('span');
+    digits.className = 'guess-digits';
+    digits.textContent = entry.guess;
+
+    // indicators
+    const indicators = document.createElement('span');
+    indicators.className = 'indicators';
+    const bulls = entry.digitsInPlace;
+    const cows = entry.digitsCorrect;
+    const misses = 12 - bulls - cows;
+    for (let i = 0; i < bulls; i++) indicators.innerHTML += '<span class="indicator bull">&#x25CF;</span>';
+    for (let i = 0; i < cows; i++) indicators.innerHTML += '<span class="indicator cow">&#x25CB;</span>';
+    for (let i = 0; i < misses; i++) indicators.innerHTML += '<span class="indicator miss">&#xB7;</span>';
+
+    // distance
+    const dist = document.createElement('span');
+    dist.className = 'distance';
+    dist.style.color = tierColor(entry.tier);
+    dist.textContent = BigInt(entry.distance).toLocaleString();
+
+    // tier badge
+    const badge = document.createElement('span');
+    badge.className = `tier-badge ${entry.tier}`;
+    badge.textContent = entry.tier;
+
+    div.appendChild(num);
+    div.appendChild(digits);
+    div.appendChild(indicators);
+    div.appendChild(dist);
+    div.appendChild(badge);
+    list.appendChild(div);
+  }
+}
+
+// ---- Round status ----
+async function refreshRoundStatus() {
+  if (!state.roundId) return;
+  try {
+    const res = await fetch(`${API}/round/${state.roundId}/status`);
+    const data = await res.json();
+    $('#stat-pool').textContent = formatWei(data.pool);
+    $('#stat-buyin').textContent = formatWei(data.currentBuyIn);
+    $('#stat-guesses').textContent = data.guessCount;
+    const tierEl = $('#stat-tier');
+    tierEl.innerHTML = `<span class="tier-badge ${data.priceTier}">${data.priceTier}</span>`;
+  } catch (e) { /* silent */ }
+}
+
+// ---- Submit guess ----
+async function submitGuess() {
+  clearStatus('play-status');
+  const guess = getGuessString();
+  if (guess.length !== 12 || !/^\d{12}$/.test(guess)) {
+    showStatus('play-status', 'Enter all 12 digits');
+    return;
+  }
+  if ($('#btn-submit').disabled) return;
+
+  state.txCounter++;
+  const txHash = '0x' + state.txCounter.toString(16).padStart(64, '0');
+
+  $('#btn-submit').disabled = true;
+  try {
+    const res = await fetch(`${API}/guess`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roundId: state.roundId,
+        guess,
+        player: state.player,
+        txHash,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showStatus('play-status', data.error || 'Guess failed');
+      $('#btn-submit').disabled = false;
+      return;
+    }
+
+    state.guessCount++;
+    state.history.push({
+      index: state.guessCount,
+      guess,
+      digitsInPlace: data.hint.digitsInPlace,
+      digitsCorrect: data.hint.digitsCorrect,
+      distance: data.hint.numericDistance,
+      tier: data.hint.priceTier,
+    });
+
+    renderHistory();
+    updateThermometer(data.hint.numericDistance);
+    await refreshRoundStatus();
+    clearDigits();
+    startCooldown();
+
+    // Check win
+    if (data.winner) {
+      setTimeout(() => showWinScreen(data), 600);
+    }
+  } catch (e) {
+    showStatus('play-status', 'Network error: ' + e.message);
+    $('#btn-submit').disabled = false;
+  }
+}
+
+// ---- Win ----
+function showWinScreen(data) {
+  $('#win-address').textContent = state.player;
+  $('#win-guesses').textContent = state.guessCount;
+  // fetch final pool
+  fetch(`${API}/round/${state.roundId}/status`)
+    .then(r => r.json())
+    .then(d => { $('#win-pool').textContent = formatWei(d.pool) + ' ETH'; })
+    .catch(() => { $('#win-pool').textContent = '???'; });
+  showScreen('winner');
+  spawnConfetti();
+}
+
+function spawnConfetti() {
+  const container = $('#confetti-container');
+  container.innerHTML = '';
+  const colors = ['#00ff41', '#ffb000', '#ff3333', '#3399ff', '#ff00ff', '#ffdd00'];
+  for (let i = 0; i < 80; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = Math.random() * 100 + '%';
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.width = (6 + Math.random() * 8) + 'px';
+    piece.style.height = (6 + Math.random() * 8) + 'px';
+    piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+    piece.style.animationDuration = (2 + Math.random() * 3) + 's';
+    piece.style.animationDelay = Math.random() * 2 + 's';
+    container.appendChild(piece);
+  }
+}
+
+// ---- New game flow ----
+async function startNewGame() {
+  clearStatus('landing-status');
+  const defaultAddr = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+  const addr = prompt('Enter your Ethereum address:', defaultAddr);
+  if (!addr) return;
+  if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+    showStatus('landing-status', 'Invalid Ethereum address');
+    return;
+  }
+  state.player = addr;
+
+  try {
+    $('#btn-new-game').disabled = true;
+    const res = await fetch(`${API}/round/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseBuyIn: '10000000000000000' }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showStatus('landing-status', data.error || 'Failed to start round');
+      $('#btn-new-game').disabled = false;
+      return;
+    }
+    state.roundId = data.roundId;
+    state.guessCount = 0;
+    state.txCounter = 0;
+    state.history = [];
+    state.cooldownUntil = 0;
+
+    createDigitInputs();
+    renderHistory();
+    updateThermometer('999999999999');
+    await refreshRoundStatus();
+    showScreen('playing');
+    getDigitInputs()[0].focus();
+  } catch (e) {
+    showStatus('landing-status', 'Network error: ' + e.message);
+  } finally {
+    $('#btn-new-game').disabled = false;
+  }
+}
+
+// ---- Event listeners ----
+$('#btn-new-game').addEventListener('click', startNewGame);
+$('#btn-submit').addEventListener('click', submitGuess);
+$('#btn-play-again').addEventListener('click', () => {
+  showScreen('landing');
+  loadAttestation();
+});
+
+// ---- Init ----
+loadAttestation();
+</script>
+</body>
+</html>
